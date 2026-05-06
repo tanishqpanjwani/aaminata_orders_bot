@@ -565,7 +565,6 @@ async def status_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ord_delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    context.user_data["in_conversation"] = True
     await query.edit_message_text(
         "🗑️ *Delete Order*\n\nEnter the Order ID to delete:",
         parse_mode="Markdown",
@@ -579,13 +578,11 @@ async def ord_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = update.message.text.strip().lstrip("#")
     if not text.isdigit():
         await update.message.reply_text("❌ Enter a valid order ID. Use /start to go back.")
-        context.user_data.pop("in_conversation", None)
         return
 
     order = db.get_order_by_id(int(text))
     if not order:
         await update.message.reply_text("❌ Order not found. Use /start to go back.")
-        context.user_data.pop("in_conversation", None)
         return
 
     context.user_data["delete_order_id"] = order["id"]
