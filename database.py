@@ -12,6 +12,8 @@ DB_PATH = os.environ.get("DB_PATH", "aaminata.db")
 class Database:
     def __init__(self, path: str = DB_PATH):
         self.path = path
+        # Make sure the directory exists (important for /data on Railway volumes)
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self._init_db()
 
     def _connect(self):
