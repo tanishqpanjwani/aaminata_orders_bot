@@ -353,6 +353,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             [InlineKeyboardButton("📋 All Orders", callback_data="ord_list")],
             [InlineKeyboardButton("🔄 Update Status", callback_data="ord_status")],
             [InlineKeyboardButton("🔍 Find by ID", callback_data="ord_view")],
+            [InlineKeyboardButton("🗑️ Delete Order", callback_data="ord_delete")],
             [InlineKeyboardButton("◀️ Back", callback_data="back_main")],
         ]
         await query.edit_message_text("📦 *Orders*", parse_mode="Markdown",
@@ -560,6 +561,74 @@ async def status_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+# ── Delete order flow ─────────────────────────────────────────────────────────
+async def ord_delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["in_conversation"] = True
+    await query.edit_message_text(
+        "🗑️ *Delete Order*\n\nEnter the Order ID to delete:",
+        parse_mode="Markdown",
+    )
+    context.user_data["awaiting_delete_id"] = True
+
+
+async def ord_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show order details and ask for confirmation before deleting."""
+    context.user_data.pop("awaiting_delete_id", None)
+    text = update.message.text.strip().lstrip("#")
+    if not text.isdigit():
+        await update.message.reply_text("❌ Enter a valid order ID. Use /start to go back.")
+        context.user_data.pop("in_conversation", None)
+        return
+
+    order = db.get_order_by_id(int(text))
+    if not order:
+        await update.message.reply_text("❌ Order not found. Use /start to go back.")
+        context.user_data.pop("in_conversation", None)
+        return
+
+    context.user_data["delete_order_id"] = order["id"]
+    keyboard = [[
+        InlineKeyboardButton("🗑️ Yes, delete", callback_data="delete_confirm"),
+        InlineKeyboardButton("◀️ Cancel", callback_data="delete_cancel"),
+    ]]
+    await update.message.reply_text(
+        f"⚠️ *Are you sure you want to delete this order?*\n\n"
+        f"Order: *#{order['id']}*\n"
+        f"Customer: {order['customer_name']}\n"
+        f"Items: {order['items']}\n"
+        f"Total: ₹{order['total']:.0f}\n"
+        f"Status: {STATUS_EMOJI.get(order['status'], '❓')} {order['status']}\n\n"
+        f"_This cannot be undone._",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def ord_delete_do(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    oid = context.user_data.pop("delete_order_id", None)
+    context.user_data.pop("in_conversation", None)
+    if not oid:
+        await query.edit_message_text("⚠️ Something went wrong. Use /start to try again.")
+        return
+    db.delete_order(oid)
+    await query.edit_message_text(
+        f"🗑️ Order *#{oid}* has been deleted.\n\nUse /start to go back.",
+        parse_mode="Markdown",
+    )
+
+
+async def ord_delete_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("delete_order_id", None)
+    context.user_data.pop("in_conversation", None)
+    await query.edit_message_text("👍 Delete cancelled. Use /start to go back.")
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 async def handle_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -604,6 +673,10 @@ async def ord_view_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
+        return
+
+    if context.user_data.get("awaiting_delete_id"):
+        await ord_delete_confirm(update, context)
         return
 
     if context.user_data.get("awaiting_cust_search"):
@@ -700,6 +773,9 @@ def main():
     app.add_handler(CallbackQueryHandler(cust_search_start, pattern="^cust_search$"))
     app.add_handler(CallbackQueryHandler(ord_list,          pattern="^ord_list$"))
     app.add_handler(CallbackQueryHandler(ord_view_start,    pattern="^ord_view$"))
+    app.add_handler(CallbackQueryHandler(ord_delete_start,  pattern="^ord_delete$"))
+    app.add_handler(CallbackQueryHandler(ord_delete_do,     pattern="^delete_confirm$"))
+    app.add_handler(CallbackQueryHandler(ord_delete_cancel, pattern="^delete_cancel$"))
     app.add_handler(CallbackQueryHandler(nlp_confirm,       pattern="^nlp_confirm$"))
     app.add_handler(CallbackQueryHandler(nlp_cancel,        pattern="^nlp_cancel$"))
     app.add_handler(CallbackQueryHandler(main_menu_callback))
