@@ -133,3 +133,7 @@ class Database:
                 "UPDATE orders SET status=?, updated_at=datetime('now','localtime') WHERE id=?",
                 (status, oid),
             )
+
+    def delete_order(self, oid: int):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM orders WHERE id=?", (oid,))
